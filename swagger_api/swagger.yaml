@@ -1,0 +1,481 @@
+---
+swagger: "2.0"
+info:
+  description: "J&J API for mobile application"
+  version: "v0"
+  title: "J&J API"
+
+basePath: "/v0"
+schemes:
+- "http"
+
+produces:
+- application/json
+paths:
+  /user/authenticate:
+    post:
+      tags:
+      - "Authentication"
+      summary: "Native Login"
+      description: "In native login user has to provide email and password and in action type parameter mobile developer has to pass 'native_login'"
+      operationId: "nativeLoginPost"
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      parameters:
+      - name: "action_type"
+        in: "formData"
+        description: "Value must be native_login."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "email"
+        in: "formData"
+        description: "Email address of users."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "password"
+        in: "formData"
+        description: "password of user."
+        required: true
+        type: "string"
+        format: "string"
+      responses:
+        200:
+          description: "JSON object which will show success or failure"
+          schema:
+            type: "object"
+  /user/authenticate?1:
+    post:
+      tags:
+      - "Authentication"
+      summary: "Facebook login"
+      description: "In Facebook login use action_type ='facebook' <br/> 
+      Note:-  <br/>
+      1) End point shows <b>'/user/authenticate?1'</b> but actual end point is <b>'/user/authenticate'</b><br/>
+      swagger was throwing me error for 'same end point' so i have post fix '?1' to endpoint <br/>
+      2) For <b>'fb_content'</b> data should be in this format <b>{\"email\":\"xyz@google.com\",\"bdate\":\"24-5-1999\"}</b>
+      whatever data you get from FB API (Please convert that object to 'string' data type) pass it to <b>'fb_content'</b> "
+      operationId: "facebookPost"
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      parameters:
+      - name: "action_type"
+        in: "formData"
+        description: "Value must be facebook."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "email"
+        in: "formData"
+        description: "Email address of users."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "fb_content"
+        in: "formData"
+        description: "whatever data (object) you get from Facebook, convert that object to 'string' data type and post to this key fb_content ."
+        required: true
+        type: "string"
+        format: "string"
+
+      responses:
+        200:
+          description: "JSON object which will show success or failure"
+          schema:
+            type: "object"         
+  /user/registration:
+    post:
+      tags:
+      - "Registration"
+      summary: "Native Registration"
+      description: "In native Registration user has to provide action_type ='native_register'<br/> "
+      operationId: "nativeRegistrationPost"
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      parameters:
+      - name: "action_type"
+        in: "formData"
+        description: "Value must be native_register."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "email"
+        in: "formData"
+        description: "Email address of users."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "password"
+        in: "formData"
+        description: "password of user."
+        required: true
+        type: "string"
+        format: "string"
+      - name: "monthly_reveal_report"
+        in: "formData"
+        description: "monthly reveal report, which user have to select after completing ."
+        required: false
+        type: "boolean"
+        format: "boolean"
+      - name: "promotional_offers_lifescan"
+        in: "formData"
+        description: "promotional_offers_lifescan radio button."
+        required: false
+        type: "boolean"
+        format: "boolean"            
+
+      responses:
+        200:
+          description: "JSON object which will show success or failure"
+          schema:
+            type: "object"   
+                 
+  /user/get-verification-code:
+    post:
+      tags:
+      - "Mobile Verification"
+      summary: "Get mobile verification code"
+      description: "To get the mobile verification code"
+      operationId: "getverificationcode"
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      parameters:
+      - name: "x-access-token"
+        in: "header"
+        description: "Token of the user, place in header as x-access-token"
+        required: true
+        type: "string"
+        format: "string"         
+      - name: "country"
+        in: "formData"
+        description: "country code"
+        required: true
+        type: "string"
+        format: "string"
+      - name: "mobile_no"
+        in: "formData"
+        description: "mobile no"
+        required: true
+        type: "string"
+        format: "string"
+
+      responses:
+        200:
+          description: "JSON object which will show success or failure"
+          schema:
+            type: "object"  
+            
+  /user/verify-mobile:
+    post:
+      tags:
+      - "Mobile Verification"
+      summary: "Check verification code"
+      description: "To validate mobile verification code"
+      operationId: "checkverificationcode"
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - application/json
+      parameters:
+      - name: "x-access-token"
+        in: "header"
+        description: "Token of the user, place in header as x-access-token"
+        required: true
+        type: "string"
+        format: "string"
+      - name: "country"
+        in: "formData"
+        description: "country code"
+        required: true
+        type: "string"
+        format: "string"
+      - name: "mobile_no"
+        in: "formData"
+        description: "mobile no"
+        required: true
+        type: "string"
+        format: "string"
+      - name: "verification_code"
+        in: "formData"
+        description: "verification code"
+        required: true
+        type: "string"
+        format: "string"
+
+      responses:
+        200:
+          description: "JSON object which will show success or failure"
+          schema:
+            type: "object"  
+            
+  /user/onboard_process:
+      post: 
+        tags: 
+          - "Onboard process"
+        summary: "Date of Birth"
+        description: "To store users date of birth <br/> 
+        Note:- <br/>
+        All On Board Process will have same route. You have to change onboard type. For date of birth you have to use <b>date_of_birth</b>"
+        operationId: "onboardprocess_date_of_birthPost"
+        consumes: 
+          - "application/x-www-form-urlencoded"
+        produces: 
+          - "application/json"
+        parameters: 
+          - 
+            name: "x-access-token"
+            in: "header"
+            description: "Token of the user, place in header as x-access-token"
+            required: true
+            type: "string"
+            format: "string"
+          - 
+            name: "onboard_type"
+            in: "formData"
+            description: "Onboard operation type, should be 'date_of_birth'"
+            required: true
+            type: "string"
+            format: "string"
+          - 
+            name: "date_of_birth"
+            in: "formData"
+            description: "Date of birth of user, provide in yyyy-mm-dd format"
+            required: true
+            type: "string"
+            format: "string"
+        responses: 
+          200: 
+            description: "JSON object which will show success or failure"
+            schema: 
+              type: "object"    
+  /user/onboard_process?: 
+    post: 
+      tags: 
+        - "Onboard process"
+      summary: "Start Time Of The day"
+      description: "To store users Start Time of the Day <br/> 
+        Note:- <br/>
+        1) End point shows <b>'/user/onboard_process?'</b> but actual end point is <b>'/user/onboard_process'</b><br/>
+        swagger was throwing me error for 'same end point' so i have post fix '?' to endpoint <br/>
+        2) All On Board Process will have same route. You have to change onboard type. For Start time of the day you have to use <b>start_day_time</b>"
+        
+      operationId: "onboardprocess_start_day_timePost"
+      consumes: 
+        - "application/x-www-form-urlencoded"
+      produces: 
+        - "application/json"
+      parameters:
+        - 
+          name: "x-access-token"
+          in: "header"
+          description: "Token of the user, place in header as x-access-token"
+          required: true
+          type: "string"
+          format: "string"
+        - 
+          name: "onboard_type"
+          in: "formData"
+          description: "Onboard operation type, should be 'start_day_time'"
+          required: true
+          type: "string"
+          format: "string"  
+        -
+          name: "start_day_time"
+          in: "formData"
+          description: "Start time of the user's day, it should be in this format '7:00 AM' or '7:30 PM' "
+          required: true
+          type: "string"
+          format: "string"
+      responses: 
+        200: 
+          description: "JSON object which will show success or failure"
+          schema: 
+            type: "object"
+  /user/onboard_process?1: 
+    post: 
+      tags: 
+        - "Onboard process"
+      summary: "Diabetes Type"
+      description: "To store users Diabetes Type <br/> 
+        Note:- <br/>
+        1) End point shows <b>'/user/onboard_process?1'</b> but actual end point is <b>'/user/onboard_process'</b><br/>
+        swagger was throwing me error for 'same end point' so i have post fix '?1' to endpoint <br/>
+        2) All On Board Process will have same route. You have to change onboard type. For Diabetes Type you have to use <b>diabetes_type</b>"
+        
+      operationId: "onboardprocess_start_day_timePost"
+      consumes: 
+        - "application/x-www-form-urlencoded"
+      produces: 
+        - "application/json"
+      parameters:
+        - 
+          name: "x-access-token"
+          in: "header"
+          description: "Token of the user, place in header as x-access-token"
+          required: true
+          type: "string"
+          format: "string"
+        - 
+          name: "onboard_type"
+          in: "formData"
+          description: "Onboard operation type, should be 'diabetes_type'"
+          required: true
+          type: "string"
+          format: "string"  
+        -
+          name: "diabetes_type"
+          in: "formData"
+          description: "Diabetes Type of the user. It should be 'opt1' for Type1, 'opt2' for Type2 or 'opt3' for Gestational"
+          required: true
+          type: "string"
+          format: "string"
+      responses: 
+        200: 
+          description: "JSON object which will show success or failure"
+          schema: 
+            type: "object"
+  /user/onboard_process?2: 
+    post: 
+      tags: 
+        - "Onboard process"
+      summary: "Describe Type"
+      description: "To store users Describe Type <br/> 
+        Note:- <br/>
+        1) End point shows <b>'/user/onboard_process?2'</b> but actual end point is <b>'/user/onboard_process'</b><br/>
+        swagger was throwing me error for 'same end point' so i have post fix '?2' to endpoint <br/>
+        2) All On Board Process will have same route. You have to change onboard type. For Describe Type you have to use <b>describe_type</b>"
+        
+      operationId: "onboardprocess_start_day_timePost"
+      consumes: 
+        - "application/x-www-form-urlencoded"
+      produces: 
+        - "application/json"
+      parameters:
+        - 
+          name: "x-access-token"
+          in: "header"
+          description: "Token of the user, place in header as x-access-token"
+          required: true
+          type: "string"
+          format: "string"
+        - 
+          name: "onboard_type"
+          in: "formData"
+          description: "Onboard operation type, should be 'describe_type'"
+          required: true
+          type: "string"
+          format: "string"  
+        -
+          name: "describe_type"
+          in: "formData"
+          description: "Describe Type of the user. It should be 'opt1' for 'I am managing diabetes well and happy to just get on with my life' and 'opt2' for 'I am managing diabetes well and regularly look for new ways to improve my diabetes care' "
+          required: true
+          type: "string"
+          format: "string"
+      responses: 
+        200: 
+          description: "JSON object which will show success or failure"
+          schema: 
+            type: "object"
+  /user/onboard_process?3: 
+    post: 
+      tags: 
+        - "Onboard process"
+      summary: "Test Reminders"
+      description: "To store users Test Reminders <br/> 
+        Note:- <br/>
+        1) End point shows <b>'/user/onboard_process?3'</b> but actual end point is <b>'/user/onboard_process'</b><br/>
+        swagger was throwing me error for 'same end point' so i have post fix '?3' to endpoint <br/>
+        2) All On Board Process will have same route. You have to change onboard type. For Describe Type you have to use <b>test_reminders</b>"
+        
+      operationId: "onboardprocess_test_reminders"
+      consumes: 
+        - "application/x-www-form-urlencoded"
+      produces: 
+        - "application/json"
+      parameters:
+        - 
+          name: "x-access-token"
+          in: "header"
+          description: "Token of the user, place in header as x-access-token"
+          required: true
+          type: "string"
+          format: "string"
+        - 
+          name: "onboard_type"
+          in: "formData"
+          description: "Onboard operation type, should be 'test_reminders'"
+          required: true
+          type: "string"
+          format: "string"  
+        -
+          name: "test_reminders"
+          in: "formData"
+          description: "It wil be a comma seperated values for example <b>7:00 AM, 7:30 AM <b/>"
+          required: true
+          type: "string"
+          format: "string"
+      responses: 
+        200: 
+          description: "JSON object which will show success or failure"
+          schema: 
+            type: "object"
+  /user/onboard_process?4:
+      post:
+        tags:
+          - "Onboard process"
+        summary: "Reveal report and promotional offers"
+        description: "To store users users reveal report and promotional offers status <br/>
+          Note:- <br/>
+          1) End point shows <b>'/user/onboard_process?4'</b> but actual end point is <b>'/user/onboard_process'</b><br/>
+          swagger was throwing me error for 'same end point' so i have post fix '?4' to endpoint <br/>
+          2) All On Board Process will have same route. You have to change onboard type. For Reveal report and promotional offers you have to use <b>reveal_reports_and_offers</b>"
+
+        operationId: "onboardprocess_reveal_reports_and_offers"
+        consumes:
+          - "application/x-www-form-urlencoded"
+        produces:
+          - "application/json"
+        parameters:
+          -
+            name: "x-access-token"
+            in: "header"
+            description: "Token of the user, place in header as x-access-token"
+            required: true
+            type: "string"
+            format: "string"
+          -
+            name: "onboard_type"
+            in: "formData"
+            description: "Onboard operation type, should be 'reveal_reports_and_offers'"
+            required: true
+            type: "string"
+            format: "string"
+          -
+            name: "monthly_reveal_report"
+            in: "formData"
+            description: "monthly reveal report status ."
+            required: true
+            type: "boolean"
+            format: "boolean"
+          -
+            name: "promotional_offers_lifescan"
+            in: "formData"
+            description: "promotional offers from lifescan status."
+            required: true
+            type: "boolean"
+            format: "boolean"
+        responses:
+          200:
+            description: "JSON object which will show success or failure"
+            schema:
+              type: "object"
