@@ -31,8 +31,9 @@ module.exports = {
     	
     },
     'describe_options': {
-      'opt1' : 'I am managing diabetes well and happy to just get on with my life.',
-      'opt2' : 'I am managing diabetes well and regularly look for new ways to improve my diabetes care.'
+      'opt1' : 'I am managing my diabetes well and am happy to just get on with my life.',
+      'opt2' : 'My diabetes is under control and I regularly look for new ways to improve my care.',
+      'opt3' : 'Most of the time it\'s hard to manage my diabetes, I could use more help.'  
     },
     'diabetes_types': {
       'opt1' : 'Type1',

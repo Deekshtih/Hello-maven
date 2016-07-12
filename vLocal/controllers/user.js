@@ -476,7 +476,7 @@ module.exports = {
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide user's describe_type" });
                 return ;
             } else if(!globalConfig.describe_options.hasOwnProperty(req.body.describe_type)) {
-                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an option for a user's describe type i.e send 'opt1' or 'opt2'" });
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an option for a user's describe type i.e send 'opt1' or 'opt2' or 'opt3'" });
                 return ;
             }
         } else if(req.body.onboard_type === "test_reminders" ) {

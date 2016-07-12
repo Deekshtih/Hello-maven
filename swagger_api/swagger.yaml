@@ -377,7 +377,7 @@ paths:
         -
           name: "describe_type"
           in: "formData"
-          description: "Describe Type of the user. It should be 'opt1' for 'I am managing diabetes well and happy to just get on with my life' and 'opt2' for 'I am managing diabetes well and regularly look for new ways to improve my diabetes care' "
+          description: "Describe Type of the user. It should be 'opt1' for 'I am managing diabetes well and happy to just get on with my life', 'opt2' for 'I am managing diabetes well and regularly look for new ways to improve my diabetes care', 'opt3' for 'Most of the time it's hard to manage my diabetes, I could use more help."
           required: true
           type: "string"
           format: "string"
