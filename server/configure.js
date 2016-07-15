@@ -24,7 +24,7 @@ module.exports = function(app) {
     // swaggerRouter configuration
     var options = {
       swaggerUi: '/swagger.json',
-      controllers: './swagger_controllers',
+      //controllers: './swagger_controllers',
       useStubs: process.env.NODE_ENV === 'development' ? true : false // Conditionally turn on stubs (mock mode)
     };
 
