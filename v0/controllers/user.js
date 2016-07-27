@@ -3,7 +3,10 @@ var userModel = require('../models/users'),
     async = require('async'),
     jwt = require('jsonwebtoken'),
     commonHelper = require('../helpers/common'),
-    authy = require('authy')(globalConfig.authy_key);    
+    authy = require('authy')(globalConfig.authy_key),
+    AtlassianCrowd = require('atlassian-crowd'),
+    crowd = new AtlassianCrowd(globalConfig.crowdOptions),
+    nodemailer = require('nodemailer');
 
 module.exports = {
 
@@ -14,48 +17,24 @@ module.exports = {
     * After Authenticating it will generate token
     */
     
-    native_login: function(req, res) {
-
-        async.series([
-            function(next){
-                // do some stuff ...
-                userModel.getUserByEmail(req.body.email,next);
+    native_login: function(request, response) {
+      var email = request.body.email;
+      var password = request.body.password;
+      crowd.user.authenticate(email, password, function (err, res) {
+        if(err) {
+          response.status(globalConfig.response_status.not_found).json({ success:false, error: 'Authentication failed', error_message: err.type });
+        }
+        else {
+          crowd.session.create(email, password, function (err, token) {
+            if(err) {
+              response.status(globalConfig.response_status.unauthorized).json({ success:false, error: 'Authentication failed', error_message: err.type });
             }
-        ],
-        // optional callback
-        function(err, results){
-
-            if(err){
-                res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "User is not Authenticated, error while fetching data",error_message:JSON.stringify(err, null, 2) });
-                return;
+            else {
+              response.status(globalConfig.response_status.success).json({ success:true, message: "User is authenticated", token:token });    
             }
-            
-            if(!results[0].hasOwnProperty("Count") || results[0].Count <= 0 ){
-                /* Not Authenticatd */
-                res.status(globalConfig.response_status.unauthorized).json({ success:false, error: "User is not Authenticated" });
-                return ;
-            }
-            
-            /* Authenticated */
-            if(results[0].Items[0].email !== req.body.email){
-                res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "User is not Authenticated" });
-                return ;
-            }    
-
-            if(!userModel.validPassword(req.body.password,results[0].Items[0].password)){
-                /* Password does not match*/
-                res.status(globalConfig.response_status.unauthorized).json({ success:false, error: "User is not Authenticated" });
-                return ;
-            } else {
-
-                /* Generating Token */
-                module.exports.generateStoreToken(results[0].Items[0],function(token){
-                    res.status(globalConfig.response_status.success).json({ success:true, message: "User is Authenticated",token:token });    
-                    return ;
-                });
-
-            }
-        });
+          });
+        }
+      });
     },
 
     /**
@@ -66,50 +45,84 @@ module.exports = {
     * @ promotional_offers_lifescan:- true/false
     * It will first verify username, If it does exists then return error message
     */
-    native_registration: function(req, res){
-        /* validate if email address is already exits */
+    native_registration: function(request, response){
 
-        async.series([
-            function(next){
-                // do some stuff ...
-                userModel.getUserByEmail(req.body.email,next);
-            }
-        ],
-        // optional callback
-        function(err, results){
+        var email = request.body.email;
 
-            if(err){
-                res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "registration fail",error_message:JSON.stringify(err, null, 2) });
-                return ;
-            } 
+        /*To check if user exist or not*/
+        crowd.user.find(email,function(findErr,findRes){
+            var executeFlag =false;
+            if(findErr){
 
-            if(results[0].hasOwnProperty("Count") &&  results[0].Count > 0 ){
-                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Email already exists" });
-                return ;
-            } 
-            /**
-                Call For registering user in DB
-            */
-            async.series([
-                function(next){
-                    userModel.registerUser(req,next);
+                /* If no user found then create user*/
+                if(findErr.type==='USER_NOT_FOUND'){
+                    executeFlag =true;
+                }else{
+                    response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "registration fail",error_message:JSON.stringify(findErr.type, null, 2) });
                 }
-            ],
-            // optional callback
-            function(err, results){
-                if(err){
-                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "registration fail",error_message:JSON.stringify(err, null, 2) });
-                    console.error("Unable to read item. Error JSON:", JSON.stringify(err, null, 2));
-                    return ;
-                } 
 
-                module.exports.generateStoreToken({'email':req.body.email},function(token){
-                    res.status(globalConfig.response_status.created).json({ success:true, message: "User Added Successfully",token:token });    
-                    return ;
+            }else{
+
+                /* If email exists*/
+                if(findRes!==undefined){
+                    response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Email already exists" });
+                }else{
+                    executeFlag =true;
+                }
+
+            }
+
+            /* Code to add user in crowd*/
+            if(executeFlag){
+
+                crowd.user.create('User', '', '', request.body.email, request.body.email, request.body.password, function(createErr,createRes){
+
+                    if(createErr){
+                        response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "registration fail",error_message:JSON.stringify(createErr.type, null, 2) });
+                    }else{
+
+                        /* Code to add user in dynamodb*/
+                        userModel.registerUser(request,function(dynamoErr,dynamoRes){
+                            if(dynamoErr){
+
+                                /*if there is an error while storing user in dynamodb delete user from crowd*/
+                                crowd.user.remove(email, function(removeErr) {
+                                    if(removeErr){
+                                        response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "registration fail",error_message:JSON.stringify(removeErr.type, null, 2) });
+                                        return ;
+                                    }
+                                });
+                                
+                            }else{
+
+                                /* Login After registration */
+                                crowd.user.authenticate(request.body.email, request.body.password, function (err, res) {
+                                    if(err) {
+                                      response.status(globalConfig.response_status.not_found).json({ success:false, error: 'Authentication failed', error_message: err.type });
+                                    }
+                                    else {
+                                      crowd.session.create(request.body.email, request.body.password, function (err, token) {
+                                        if(err) {
+                                          response.status(globalConfig.response_status.unauthorized).json({ success:false, error: 'Authentication failed', error_message: err.type });
+                                        }
+                                        else {
+                                          response.status(globalConfig.response_status.created).json({ success:true, message: "User Added Successfully", token:token });
+                                        }
+                                      });
+                                    }
+                                });
+
+
+                            }
+
+                        });
+                    }
+
                 });
+            }
 
-            });
         });
+
     },
 
     /**
@@ -312,8 +325,14 @@ module.exports = {
             if(!req.body.hasOwnProperty('password') || req.body.password.trim() ===""){
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide User Password" });
                 return ;
-            } 
-
+            }
+        }
+        
+        if(req.body.action_type === "native_register") {
+          if(!commonHelper.validatePassword(req.body.password)){
+            res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Password must contain atleast 1 character, 1 number and should be of minimum 8 characters and maximum of 16 characters. " });
+            return ;
+          }
         }
         
         switch(req.body.action_type)
@@ -398,7 +417,7 @@ module.exports = {
       
       authy.phones().verification_check(mobile_no, country, verification_code, function (err, mRes) {
         if(mRes && typeof mRes.success !== "undefined") {
-          var userObj = {email:req.decoded.email};
+          var userObj = {email:req.email};
           var updateObject ={
             "mobile_verified": true,
             "mobile_no": mobile_no,
@@ -428,13 +447,13 @@ module.exports = {
      * Function is used to update onboard process fields like date of birth
      */
     onboard_process:function(req, res) {
-        var onboardTypeArr = ["date_of_birth", "start_day_time", "diabetes_type", "describe_type", "test_reminders","reveal_reports_and_offers"];
+        var onboardTypeArr = ["date_of_birth", "start_day_time", "diabetes_type", "personality_type", "test_reminders","reveal_reports_and_offers","starlix_medications","glynase_medications"];
 
         if(!req.body.hasOwnProperty('onboard_type') || req.body.onboard_type.trim() ===""){
             res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide Onboard Type" });
             return ;
         } else if(onboardTypeArr.indexOf(req.body.onboard_type) === -1){
-            res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Onboard type should be date_of_birth, start_day_time, diabetes_type, describe_type, test_reminders or reveal_reports_and_offers" });
+            res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Onboard type should be date_of_birth, start_day_time, diabetes_type, describe_type, test_reminders, reveal_reports_and_offers, starlix_medications or glynase_medications " });
             return ;
         }
 
@@ -447,6 +466,9 @@ module.exports = {
                 return ;
             }else if(!commonHelper.validateDate(req.body.date_of_birth)){
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Date of birth should be in yyyy-mm-dd format" });
+                return ;
+            }else if(!commonHelper.validateFutureDate(req.body.date_of_birth)){
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "For date of birth, future date is not allowed" });
                 return ;
             }
 
@@ -470,30 +492,37 @@ module.exports = {
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an option for a diabetes type i.e send 'opt1' for Type1, 'opt2' for Type2 or 'opt3' for Gestational" });
                 return ;
             }
-        } else if(req.body.onboard_type === "describe_type" ) {
+        } else if(req.body.onboard_type === "personality_type" ) {
             /* user describe options type field is compulsory for describe_type onboard type */
-            if(!req.body.hasOwnProperty('describe_type') || req.body.describe_type.trim() ===""){
-                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide user's describe_type" });
+            if(!req.body.hasOwnProperty('personality_type') || req.body.personality_type.trim() ===""){
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide user's personality_type" });
                 return ;
-            } else if(!globalConfig.describe_options.hasOwnProperty(req.body.describe_type)) {
-                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an option for a user's describe type i.e send 'opt1' or 'opt2' or 'opt3'" });
+            } else if(!globalConfig.describe_options.hasOwnProperty(req.body.personality_type)) {
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an option for a user's personality type i.e send 'opt1' or 'opt2' or 'opt3'" });
                 return ;
             }
         } else if(req.body.onboard_type === "test_reminders" ) {
 
             /* test_reminders field is compulsory for diabetes_type test_reminders  */
-            if(!req.body.hasOwnProperty('test_reminders') || req.body.test_reminders.trim() ===""){
+
+            console.log(req.body.test_reminders);
+            if(!req.body.hasOwnProperty('test_reminders') || req.body.test_reminders ===""){
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide user's test reminders" });
                 return ;
             }else{
                 var reminderArr =[];
-                reminderArr =(req.body.test_reminders).split(',').filter(Boolean);
-                        for(var i in reminderArr){
-                            if(!commonHelper.validateTime(reminderArr[i].trim())){
-                                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Test reminders time should be in 12 hour format (Ex 7:00 AM)"});
-                                return ;
-                            }
-                        }
+                if(typeof req.body.test_reminders === 'string'){
+                    reminderArr.push(req.body.test_reminders)
+                }else{
+                    reminderArr =req.body.test_reminders;
+                }
+
+                for(var i in reminderArr){
+                    if(!commonHelper.validateTime(reminderArr[i].trim())){
+                        res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Test reminders time should be in 12 hour format (Ex 7:00 AM)"});
+                        return ;
+                    }
+                }
 
                     }
 
@@ -514,27 +543,70 @@ module.exports = {
                 res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Promotional offers value should be either true or false." });
                 return ;
             }
+        }else if(req.body.onboard_type === "starlix_medications" ) {
+
+            /* medication_starlix field is compulsory for medication_starlix onboard type  */
+            if(!req.body.hasOwnProperty('starlix_medications') || req.body.starlix_medications.trim() ===""){
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide user's starlix medications" });
+                return ;
+            }else{
+                var medicationArr =[];
+                medicationArr =(req.body.starlix_medications).split(',').filter(Boolean);
+                for(var i in medicationArr){
+                    if(!commonHelper.validateTime(medicationArr[i].trim())){
+                        res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Starlix medications time should be in 12 hour format (Ex 7:00 AM)"});
+                        return ;
+                    }
+                }
+
+            }
+
+        }else if(req.body.onboard_type === "glynase_medications" ) {
+
+            /* medication_starlix field is compulsory for glynase_medications onboard type  */
+            if(!req.body.hasOwnProperty('glynase_medications') || req.body.glynase_medications.trim() ===""){
+                res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide user's glynase medications" });
+                return ;
+            }else{
+                var medicationArr =[];
+                medicationArr =(req.body.glynase_medications).split(',').filter(Boolean);
+                for(var i in medicationArr){
+                    if(!commonHelper.validateTime(medicationArr[i].trim())){
+                        res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Glynase medications time should be in 12 hour format (Ex 7:00 AM)"});
+                        return ;
+                    }
+                }
+
+            }
+
         }
+
         
         switch(req.body.onboard_type)
         {
             case 'date_of_birth':
-                module.exports.update_dateofbirth(req.decoded.email,req, res);
+                module.exports.update_dateofbirth(req.email,req, res);
                 break;
             case 'start_day_time':
-                module.exports.update_start_day_time(req.decoded.email,req, res);
+                module.exports.update_start_day_time(req.email,req, res);
                 break;
             case 'diabetes_type':
-                module.exports.update_diabetes_type(req.decoded.email,req, res);
+                module.exports.update_diabetes_type(req.email,req, res);
                 break;
-            case 'describe_type':
-                module.exports.update_describe_type(req.decoded.email,req, res);
+            case 'personality_type':
+                module.exports.update_describe_type(req.email,req, res);
                 break;
             case 'test_reminders':
-                module.exports.update_test_reminders(req.decoded.email,req, res);
+                module.exports.update_test_reminders(req.email,req, res);
                 break;
             case 'reveal_reports_and_offers':
-                module.exports.update_reveal_reports_and_offers(req.decoded.email,req, res);
+                module.exports.update_reveal_reports_and_offers(req.email,req, res);
+                break;
+            case 'starlix_medications':
+                module.exports.update_starlix_medications(req.email,req, res);
+                break;
+            case 'glynase_medications':
+                module.exports.update_glynase_medications(req.email,req, res);
                 break;
   
         }
@@ -640,7 +712,7 @@ module.exports = {
 
     update_describe_type: function(email, req, res) {
         var updateObject ={
-            describe_type: globalConfig.describe_options[req.body.describe_type]
+            personality_type: globalConfig.describe_options[req.body.personality_type]
         };
 
         async.series([
@@ -651,10 +723,10 @@ module.exports = {
             // optional callback
             function(err, results){
                 if(err){
-                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Onboard process to update user's describe type failed",error_message:JSON.stringify(err, null, 2) });
+                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Onboard process to update user's personality type failed",error_message:JSON.stringify(err, null, 2) });
                     return;
                 } else {
-                    res.status(globalConfig.response_status.success).json({ success:true, message: "Onboard process to update user's describe type is successful"});
+                    res.status(globalConfig.response_status.success).json({ success:true, message: "Onboard process to update user's personality type is successful"});
                 }
 
             });
@@ -668,12 +740,19 @@ module.exports = {
 
         var userObj = {email:email};
         var reminderArr =[];
-        var reqArr = (req.body.test_reminders).split(',').filter(Boolean);
-        for(var i in reqArr){
-            reminderArr.push(reqArr[i].trim().toUpperCase());
+        if(typeof req.body.test_reminders === 'string'){
+            reminderArr.push(req.body.test_reminders)
+        }else{
+            reminderArr =req.body.test_reminders;
         }
+
+        var remiders =  [];
+        for(var i in reminderArr){
+            remiders.push(reminderArr[i].trim().toUpperCase());
+        }
+
         var updateObject ={
-            "test_reminders":reminderArr
+            "test_reminders":remiders
         };
 
         async.series([
@@ -730,6 +809,380 @@ module.exports = {
                 }
 
             });
-    }
+    },
     
+    /*
+     * Function used to log out a user
+     */
+    
+    logout: function (req, res) {
+      var token = req.body.token || req.query.token || req.headers['x-access-token'];
+      crowd.session.destroy(token, function (err) {
+        if(err) {
+          res.status(globalConfig.response_status.internal_server_error).json({ success: false, error: 'An error occurred while logging out user', error_message: err.type });
+        }
+        else {
+          res.status(globalConfig.response_status.success).json({ success:true, message: "User is successfully logged out"});
+        }
+      });
+    },
+    
+    /*
+     * Function to change user password
+     */
+    
+    change_password: function(request, response) {
+      if(!request.body.hasOwnProperty('old_password') || request.body.old_password.trim() ===""){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide old password" });
+        return ;
+      }
+      if(!request.body.hasOwnProperty('new_password') || request.body.new_password.trim() ===""){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide new password" });
+        return ;
+      } else if(!commonHelper.validatePassword(request.body.new_password)){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Password must contain atleast 1 number and should be of minimum 8 characters and maximum of 16 characters." });
+        return ;
+      }
+      if(request.body.old_password === request.body.new_password) {
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "New password must be different from the current password" });
+        return ;
+      }
+      var email = request.email;
+      var oldPassword = request.body.old_password;
+      var newPassword = request.body.new_password;
+      
+      crowd.user.authenticate(email, oldPassword, function(err, res) {
+        if(err) {
+          if(err.type === "INVALID_USER_AUTHENTICATION") {
+            response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Old password does not match" });
+            return;
+          } else {
+           response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Some error occurred. Please try again.", error_message: err.type});
+            return;
+          }
+        } else if(res) {
+          crowd.user.changepassword(email, newPassword, function (err) {
+            if(err) {
+              response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: 'An error occurred while updating password', error_message: err.type });
+              return;
+            }
+            else {
+              response.status(globalConfig.response_status.success).json({ success:true, message: "Password is successfully updated" });    
+              return;
+            }
+          });
+        }
+      });
+    },
+
+    /*
+     * Function is used to  update starlix medications field (Onboard process)
+     * @ starlix_medications:- Array of time in 12 hour format.
+     */
+    update_starlix_medications:function(email,req, res){
+
+        var userObj = {email:email};
+        var medicationArr =[];
+        var reqArr = (req.body.starlix_medications).split(',').filter(Boolean);
+        for(var i in reqArr){
+            medicationArr.push(reqArr[i].trim().toUpperCase());
+        }
+        var updateObject ={
+            "starlix_medications":medicationArr
+        };
+
+        async.series([
+                function(next){
+                    userModel.updateItem(userObj,updateObject,next);
+                }
+            ],
+            // optional callback
+            function(err, results){
+                if(err){
+
+                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Onboard process to update starlix medications failed",error_message:JSON.stringify(err, null, 2) });
+                    return;
+
+                } else {
+
+                    res.status(globalConfig.response_status.success).json({ success:true, message: "Onboard process to update starlix medications is successful"});
+                    return;
+                }
+
+            });
+    },
+
+    /*
+     * Function is used to update glynase medications field (Onboard process)
+     * @ glynase_medications:- Array of time in 12 hour format.
+     */
+    update_glynase_medications:function(email,req, res){
+
+        var userObj = {email:email};
+        var medicationArr =[];
+        var reqArr = (req.body.glynase_medications).split(',').filter(Boolean);
+        for(var i in reqArr){
+            medicationArr.push(reqArr[i].trim().toUpperCase());
+        }
+        var updateObject ={
+            "glynase_medications":medicationArr
+        };
+
+        async.series([
+                function(next){
+                    userModel.updateItem(userObj,updateObject,next);
+                }
+            ],
+            // optional callback
+            function(err, results){
+                if(err){
+
+                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Onboard process to update glynase medications failed",error_message:JSON.stringify(err, null, 2) });
+                    return;
+
+                } else {
+
+                    res.status(globalConfig.response_status.success).json({ success:true, message: "Onboard process to update glynase medications is successful"});
+                    return;
+                }
+
+            });
+    },
+    
+    /*
+     * Main handler function for forgot password feature
+     * @param mix request
+     * @param mix response
+     * @returns response
+     */
+    
+    forgot_password: function(request, response) {
+      if(!request.body.hasOwnProperty('action_type') || request.body.action_type.trim() === "" || globalConfig.forgot_password_action.indexOf(request.body.action_type) === -1){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide an action type from getRecoveryCode, checkRecoveryCode or setNewPassword" });
+        return ;
+      } 
+      
+      switch(request.body.action_type) {
+        case 'getRecoveryCode':
+          module.exports.sendRecoveryCode(request, response);
+          break;
+        case 'checkRecoveryCode':
+          module.exports.check_password_recoverycode(request, response);
+          break;
+        case 'setNewPassword':
+          module.exports.set_new_password(request, response);
+          break;
+      }
+    },
+    
+    /*
+     * To send password recovery code to the user's email
+     * @param mix request
+     * @param mix response
+     * @returns response
+     */
+    
+    sendRecoveryCode: function(request, response) {
+      if(!request.body.hasOwnProperty('email') || request.body.email.trim() ===""){
+          response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide User Email" });
+          return ;
+      } else if(!commonHelper.validateEmail(request.body.email)){
+          response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide Proper User Email" });
+          return ;
+      }
+      var email = request.body.email;
+      crowd.user.find(email, function(err, res) {
+        if(err) {
+          response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: 'An error occurred', error_message: err.type });
+        }
+        else {
+          var psw_recovery_code = commonHelper.generateRandomCode();
+          var transporter = nodemailer.createTransport(globalConfig.forgot_password_mail_config.SMTP);
+          
+          globalConfig.forgot_password_mail_config.mailOptions.html += psw_recovery_code;
+          globalConfig.forgot_password_mail_config.mailOptions.to = email;
+          
+          transporter.sendMail(globalConfig.forgot_password_mail_config.mailOptions, function(error, info){
+            if(error){
+              response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: 'An error occurred while sending mail', error_message: error });
+            } else {
+              async.series([
+                function(next){
+                   userModel.updateItem({email: email}, {'psw_recovery_code': psw_recovery_code.toString()}, next);
+                }
+              ],
+ 
+              function(asyncError, results){
+                if(asyncError){
+                    response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "An error occurred while storing recovery code to the database" });
+                    return;
+                } else {
+                    response.status(globalConfig.response_status.success).json({ success:true, message: "Please check your email" });
+                    return;
+                }
+              });    
+            }
+          });
+        }
+      });
+    },
+    
+    /*
+     * Function to recover the password
+     * @param mix request
+     * @param mix response
+     * @returns response
+     */
+    
+    check_password_recoverycode: function(request, response) {
+      if(!request.body.hasOwnProperty('email') || request.body.email.trim() ===""){
+          response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide User Email" });
+          return ;
+      } else if(!commonHelper.validateEmail(request.body.email)){
+          response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide Proper User Email" });
+          return ;
+      }
+      if(!request.body.hasOwnProperty('psw_recovery_code') || request.body.psw_recovery_code.trim() === ""){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide password recovery code" });
+        return ;
+      }
+      var email = request.body.email;
+      var psw_recovery_code = request.body.psw_recovery_code;
+      
+      async.series([
+        function(next){
+          userModel.checkRecoveryCode(email, psw_recovery_code, next);
+        }
+      ],
+ 
+      function(asyncError, results){
+        if(asyncError){
+          response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "An error occurred while storing recovery code to the database" });
+        } else {
+          if(results[0].hasOwnProperty("Count") &&  results[0].Count > 0 ){
+            response.status(globalConfig.response_status.success).json({ success:true, message: "Password recovery code is correct" }); 
+          } else { 
+            response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Password recovery code & email does not match" });
+          }
+        }
+      });      
+    },
+    
+    /*
+     * Set new password after using forgot password option
+     * @param mix request
+     * @param mix response
+     * @returns response
+     */
+    
+    set_new_password: function(request, response) {
+      if(!request.body.hasOwnProperty('email') || request.body.email.trim() === ""){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide User Email" });
+        return;
+      } else if(!commonHelper.validateEmail(request.body.email)){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide Proper User Email" });
+        return;
+      }
+      if(!request.body.hasOwnProperty('new_password') || request.body.new_password.trim() === ""){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please Provide new password" });
+        return;
+      } else if(!commonHelper.validatePassword(request.body.new_password)){
+        response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Password must contain atleast 1 number and should be of minimum 8 characters and maximum of 16 characters." });
+        return;
+      }
+      var email = request.body.email;
+      var newPassword = request.body.new_password;
+      crowd.user.changepassword(email, newPassword, function (err) {
+        if(err) {
+          response.status(globalConfig.response_status.internal_server_error).json({ success:false, error: 'An error occurred while setting new password', error_message: err.type });
+          return;
+        }
+        else {
+          async.series([
+            function(next){
+              var removeAttrs = ['psw_recovery_code'];
+              userModel.removeUserAttributes(email, removeAttrs, next);
+            }
+          ],
+          function(err, results){
+            response.status(globalConfig.response_status.success).json({ success:true, message: "Password is successfully updated" });    
+            return;
+         });
+        }
+      });     
+    },
+
+    /*
+     * Function is used to complete user details
+     *
+     */
+    user_details:function(req, res){
+
+        async.series([
+                function(next){
+                    userModel.getUserByEmail(req.email,next);
+                }
+            ],
+            function(err, results){
+
+                if(err){
+                    res.status(globalConfig.response_status.internal_server_error).json({ success:false, error: "Error in fetching user details.",error_message:JSON.stringify(err, null, 2) });
+                    return;
+                } else {
+
+                    if(results[0].Items.length>0){
+
+                        var userObj = results[0].Items[0];
+
+                        if(userObj.register_date!==undefined && userObj.register_date!==''){
+                            userObj.register_date = commonHelper.convertTimestamptoDate(userObj.register_date);
+                        }
+
+                        if(userObj.date_of_birth!==undefined && userObj.date_of_birth!==''){
+                            userObj.date_of_birth = commonHelper.convertTimestamptoDate(userObj.date_of_birth);
+                        }
+
+                        if(userObj.personality_type !==undefined && userObj.personality_type!==''){
+                            for(var key in globalConfig.describe_options ){
+                                if(globalConfig.describe_options[key] === userObj.personality_type){
+                                    userObj.personality_type = key;
+                                }
+                            }
+                        }
+
+                        if(userObj.diabetes_type !==undefined && userObj.diabetes_type!==''){
+                            for(var key in globalConfig.diabetes_types ){
+                                if(globalConfig.diabetes_types[key] === userObj.diabetes_type){
+                                    userObj.diabetes_type = key;
+                                }
+                            }
+                        }
+
+                        if(userObj.country !==undefined && userObj.country!==''){
+                            for(var key in globalConfig.countries ){
+                                if(globalConfig.countries[key] === userObj.country){
+                                    userObj.country = key;
+                                }
+                            }
+                        }
+
+                        if(userObj.glynase_medications !==undefined && userObj.glynase_medications!==''){
+                            userObj.glynase_medications = userObj.glynase_medications.toString();
+                        }
+
+                        if(userObj.starlix_medications !==undefined && userObj.starlix_medications!==''){
+                            userObj.starlix_medications = userObj.starlix_medications.toString();
+                        }
+
+                        res.status(globalConfig.response_status.success).json({ success:true, user: userObj});
+                        return;
+
+                    }else{
+                        res.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Cannot find respective user details" });
+                        return;
+                    }
+                }
+
+            });
+    },
 };
