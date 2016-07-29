@@ -1220,5 +1220,95 @@ module.exports = {
       function(err, res) {
         response.status(200).json({error: err, success: res});
       });
-  }
+  },
+
+
+    /**
+     * To push data into server from mobile. Data should be in json format.
+     * @param {type} request
+     * @param {type} response
+     */
+    sync_push: function (request, response) {
+
+        // Json object
+        var obj = request.body;
+
+        // Details that are to be added must be passed in jdon's add object
+        if (obj.add !== null && obj.add !== undefined && obj.add !== "" && Object.keys(obj.add).length !== 0) {
+
+            // Validation to check the table (collections) name passed are valid.
+            var tableArr = ["jnj_users", "jnj_user_reminders", "jnj_user_devices", "jnj_user_devices_log", "jnj_device_pairing", "jnj_device_reading", "jnj_event_log"];
+            var tables = Object.keys(obj.add);
+            tables.forEach(function (key) {
+                if (tableArr.indexOf(key) === -1) {
+                    response.status(globalConfig.response_status.unprocessable_entity).json({
+                        success: false,
+                        error: "Invalid table name [" + key + "] , table name can be jnj_users, jnj_user_reminders, jnj_user_devices, jnj_user_devices_log, jnj_device_pairing, jnj_device_reading, jnj_event_log"
+                    });
+                    return;
+                }
+            });
+
+
+            var asyncTasks = []
+            tables.forEach(function (key) {
+
+                // to get object based on the key(table names)
+                var currentObj = obj.add[key];
+                if (currentObj !== null && currentObj !== undefined && currentObj !== "" && Object.keys(currentObj).length !== 0) {
+
+                    // Check to see if passed object is array or not
+                    if (Array.isArray(currentObj)) {
+
+                        // if object is array then it is added individually in async task array
+                        currentObj.forEach(function (o) {
+
+                            asyncTasks.push(function (callback) {
+                                userModel.syncPush(key, o, function (err, result) {
+                                    callback(err, result);
+                                });
+                            });
+
+                        });
+                    } else {
+
+                        // if it is not an array then it is directly added in async task array
+                        asyncTasks.push(function (callback) {
+                            userModel.syncPush(key, currentObj, function (err, result) {
+                                callback(err, result);
+                            });
+                        });
+
+                    }
+                }
+            });
+
+            // Database call to store objects in async task
+            async.parallel(asyncTasks, function (asyncError, asyncResult) {
+                if (asyncError) {
+                    response.status(globalConfig.response_status.internal_server_error).json({
+                        success: false,
+                        error: "Error occured while syncing.",
+                        error_message: JSON.stringify(asyncError, null, 2)
+                    });
+                    return;
+                } else {
+                    response.status(globalConfig.response_status.success).json({
+                        success: true,
+                        message: "Sync push is successful"
+                    });
+                    return;
+                }
+            });
+
+        } else {
+            response.status(globalConfig.response_status.unprocessable_entity).json({
+                success: false,
+                error: "Empty add object. "
+            });
+            return;
+        }
+
+    }
+
 };

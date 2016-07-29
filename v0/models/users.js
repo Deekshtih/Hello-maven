@@ -178,6 +178,14 @@ module.exports = {
       };
       
       dynamodb.query(params, callback);
+    },
+
+    syncPush: function(tableName, object, callback) {
+        var params = {
+            TableName: tableName,
+            Item: object
+        };
+        dynamodb.put(params,callback);
     }
 }
     

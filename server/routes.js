@@ -79,6 +79,7 @@ module.exports.initialize = function(app, router) {
         authenticateApiRouter.get('/user', v0_user.user_details);
         authenticateApiRouter.get('/user/devices', v0_device.user_devices);
         authenticateApiRouter.post('/user/sync/pull', v0_user.sync_pull);
+		authenticateApiRouter.post('/user/sync/push', v0_user.sync_push);
         app.use('/v0', authenticateApiRouter);
 
 };
