@@ -1185,4 +1185,40 @@ module.exports = {
 
             });
     },
+    
+  /**
+   * To send the data to the mobile from the server
+   * @param {type} request
+   * @param {type} response
+   * @returns {undefined}
+   */
+
+  sync_pull: function(request, response) {
+
+    if(!request.body.hasOwnProperty('user_id') || request.body.user_id.trim() === ""){
+      response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide user id" });
+      return ;
+    }
+
+    if(!request.body.hasOwnProperty('device_id') || request.body.device_id.trim() === ""){
+      response.status(globalConfig.response_status.unprocessable_entity).json({ success:false, error: "Please provide device id" });
+      return ;
+    }
+
+    var userId = request.body.user_id;
+    var deviceId = request.body.device_id;
+
+    async.series([
+      function(next){
+          var reqObj = {
+            "userId": userId,
+            "deviceId": deviceId
+          };
+          userModel.getLastSyncTime(reqObj, next);
+        }
+      ],
+      function(err, res) {
+        response.status(200).json({error: err, success: res});
+      });
+  }
 };

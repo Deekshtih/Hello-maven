@@ -153,6 +153,31 @@ module.exports = {
         };
 
         dynamodb.update(params,callback);
+    },
+    
+    /**
+     * To get the last sync time of a device
+     * @param {type} reqObject
+     * @param {type} callback
+     * @returns {undefined}
+     */
+    
+    getLastSyncTime: function(reqObject, callback) {      
+      var params = {
+        TableName: "jnj_sync_details",
+        IndexName: "user_sid-device_identifier-index",
+        KeyConditionExpression: "#user_sid = :user_sid and #device_identifier = :device_identifier",
+        ExpressionAttributeNames: {
+          "#user_sid": "user_sid",
+          "#device_identifier": "device_identifier"
+        },
+        ExpressionAttributeValues: {
+          ":user_sid": Number(reqObject.userId),
+          ":device_identifier": reqObject.deviceId
+        }
+      };
+      
+      dynamodb.query(params, callback);
     }
 }
     

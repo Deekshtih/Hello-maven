@@ -76,8 +76,9 @@ module.exports.initialize = function(app, router) {
         authenticateApiRouter.post('/user/verify-mobile', v0_user.verify_mobile_no);
         authenticateApiRouter.post('/user/change-password', v0_user.change_password);
         authenticateApiRouter.post('/device/log-events', v0_device.device_logs);
-		authenticateApiRouter.get('/user', v0_user.user_details);
-		authenticateApiRouter.get('/user/devices', v0_device.user_devices);
-	    app.use('/v0', authenticateApiRouter);
+        authenticateApiRouter.get('/user', v0_user.user_details);
+        authenticateApiRouter.get('/user/devices', v0_device.user_devices);
+        authenticateApiRouter.post('/user/sync/pull', v0_user.sync_pull);
+        app.use('/v0', authenticateApiRouter);
 
 };

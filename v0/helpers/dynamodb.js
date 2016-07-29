@@ -10,10 +10,10 @@ module.exports = {
 
 	scan: function(params,callback) {
 
-		dynamodbObj.scan(params, function(err, data) {
+		docClient.scan(params, function(err, data) {
 			
 			callback(null,data.Items);
-		  return data.Items
+		  return data.Items;
 		});
          
     },
